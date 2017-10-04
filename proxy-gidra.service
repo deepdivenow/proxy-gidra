@@ -5,8 +5,8 @@ After=network.target
 [Service]
 ExecStart=/usr/sbin/proxy-gidra-monitor.pl
 KillMode=process
-Restart=on-failure
-Type=notify
+Restart=always
+Type=forking
 
 [Install]
 WantedBy=multi-user.target

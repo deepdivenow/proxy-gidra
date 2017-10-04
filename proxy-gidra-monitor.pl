@@ -43,6 +43,7 @@ my @mysql_servers = ( ['centos01',3306],
                       ['centos02',3306],
                       ['centos03',3306],
                     );
+my $AVAILABLE_WHEN_DONOR=1;
 my $log_file = '/tmp/proxy-gidra.log';
 my $pid_file = '/tmp/proxy-gidra.pid';
 
@@ -146,7 +147,7 @@ sub thread_mysql_status {
                  else { $maintemode=1; } 
            }
            my $nowsta;  # Status now
-           if ( ( $nodestatus == 4 || $nodestatus == 2 ) && $clusterstatus == 1 ) { $nowsta = 0; }
+           if ( ( $nodestatus == 4 || ($nodestatus == 2 && $AVAILABLE_WHEN_DONOR == 1 )) && $clusterstatus == 1 ) { $nowsta = 0; }
            if ( $maintemode == 1 ) { $nowsta=1; }
            if ( ( $nodestatus != 4 && $nodestatus != 2 ) || $clusterstatus != 1 ) { $nowsta = 3; }
            my $time=time();    
