@@ -1,0 +1,12 @@
+[Unit]
+Description=ProxySQL Status Monitor for Galera CLuster
+After=network.target
+
+[Service]
+ExecStart=/usr/sbin/proxy-gidra-monitor.pl
+KillMode=process
+Restart=on-failure
+Type=notify
+
+[Install]
+WantedBy=multi-user.target
