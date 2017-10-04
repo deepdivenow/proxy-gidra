@@ -146,9 +146,9 @@ sub thread_mysql_status {
                  else { $maintemode=1; } 
            }
            my $nowsta;  # Status now
-           if ( $nodestatus == 4 && $clusterstatus == 1 ) { $nowsta = 0; }
+           if ( ( $nodestatus == 4 || $nodestatus == 2 ) && $clusterstatus == 1 ) { $nowsta = 0; }
            if ( $maintemode == 1 ) { $nowsta=1; }
-           if ( $nodestatus != 4 || $clusterstatus != 1 ) { $nowsta = 3; }
+           if ( ( $nodestatus != 4 && $nodestatus != 2 ) || $clusterstatus != 1 ) { $nowsta = 3; }
            my $time=time();    
            if ( $mysql_status[($server_number-1)*3+2] == $nowsta ) { # If status not changed
               $mysql_status[($server_number-1)*3+1] = $time;
