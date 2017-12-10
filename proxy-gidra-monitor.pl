@@ -326,114 +326,114 @@ sub thread_proxysql_admin {
   my $dsn="DBI:mysql:database=$database;host=$proxysql_host;port=$proxysql_port;mysql_connect_timeout=10;mysql_write_timeout=5;mysql_read_timeout=5";
   my %attr = ( PrintError => 0, RaiseError => 0 );
   
- while ( 1 ) {   ### Start main thread loop
-  my $dbh;
-  until ( $dbh = DBI->connect( $dsn, $proxysql_user, $proxysql_pass, \%attr ) ) {
-    mylog("Proxy:0 HOST:$proxysql_host:$proxysql_port Error: Can't connect: $DBI::errstr. Pausing before retrying.");
-    sleep $mysql_err_timeout;
-  }
-  eval {      ### Catch _any_ kind of failures from the code within
-    mylog("Prx:0 HOST:$proxysql_host:$proxysql_port OK: Start Execution");
-    sleep $mysql_err_timeout;
-    $dbh->{RaiseError} = 1;
-    $dbh->{AutoCommit} = 1;
-    $dbh->{mysql_server_prepare} = 0;
+  while ( 1 ) {   ### Start main thread loop
+    my $dbh;
+    until ( $dbh = DBI->connect( $dsn, $proxysql_user, $proxysql_pass, \%attr ) ) {
+      mylog("Proxy:0 HOST:$proxysql_host:$proxysql_port Error: Can't connect: $DBI::errstr. Pausing before retrying.");
+      sleep $mysql_err_timeout;
+    }
+    eval {      ### Catch _any_ kind of failures from the code within
+      mylog("Prx:0 HOST:$proxysql_host:$proxysql_port OK: Start Execution");
+      sleep $mysql_err_timeout;
+      $dbh->{RaiseError} = 1;
+      $dbh->{AutoCommit} = 1;
+      $dbh->{mysql_server_prepare} = 0;
 
-    while (1) { ## Start monitoring thread loop
-      my %HASH; # Save statistics by host_port arguments
-      my %STAT;
-      my @mysql_good_nodes;
-      my @mysql_bad_nodes;
-      my @proxy_good_write_nodes;
-      my @proxy_bad_write_nodes;
-      my @proxy_good_read_nodes;
-      my @proxy_bad_read_nodes;
-      $STAT{'mysql_good_nodes_ref'}=\@mysql_good_nodes;
-      $STAT{'mysql_bad_nodes_ref'}=\@mysql_bad_nodes;
-      $STAT{'proxy_good_write_nodes_ref'}=\@proxy_good_write_nodes;
-      $STAT{'proxy_bad_write_nodes_ref'}=\@proxy_bad_write_nodes;
-      $STAT{'proxy_good_read_nodes_ref'}=\@proxy_good_read_nodes;
-      $STAT{'proxy_bad_read_nodes_ref'}=\@proxy_bad_read_nodes;
-      my $NEED_FLUSH=0;
+      while (1) { ## Start monitoring thread loop
+        my %HASH; # Save statistics by host_port arguments
+        my %STAT;
+        my @mysql_good_nodes;
+        my @mysql_bad_nodes;
+        my @proxy_good_write_nodes;
+        my @proxy_bad_write_nodes;
+        my @proxy_good_read_nodes;
+        my @proxy_bad_read_nodes;
+        $STAT{'mysql_good_nodes_ref'}=\@mysql_good_nodes;
+        $STAT{'mysql_bad_nodes_ref'}=\@mysql_bad_nodes;
+        $STAT{'proxy_good_write_nodes_ref'}=\@proxy_good_write_nodes;
+        $STAT{'proxy_bad_write_nodes_ref'}=\@proxy_bad_write_nodes;
+        $STAT{'proxy_good_read_nodes_ref'}=\@proxy_good_read_nodes;
+        $STAT{'proxy_bad_read_nodes_ref'}=\@proxy_bad_read_nodes;
+        my $NEED_FLUSH=0;
            
-      read_proxy_conf ( $dbh, \%HASH, \%STAT);
-      read_mysql_conf ( \%HASH, \%STAT);
+        read_proxy_conf ( $dbh, \%HASH, \%STAT);
+        read_mysql_conf ( \%HASH, \%STAT);
 
-      #Start monitoring logic
-      #Start check 
-      if ( scalar @mysql_good_nodes > 0) { #If we have good nodes status
-        for my $tmp_node (@mysql_bad_nodes) {
-          if ( $HASH{$tmp_node}{'proxy_read'} == 1 && $HASH{$tmp_node}{'proxy_read_status'} == 0 ) {
-            proxy_suspend_node($dbh,$tmp_node,$proxysql_rdid);
-            $NEED_FLUSH=1;
-          }
-          if ( $HASH{$tmp_node}{'proxy_write'} == 1 && $HASH{$tmp_node}{'proxy_write_status'} == 0 ) {
-            proxy_suspend_node($dbh,$tmp_node,$proxysql_wrid);
-            $NEED_FLUSH=1;
-          }
-        }
-             
-        for my $tmp_node (@mysql_good_nodes) {
-          if ( $HASH{$tmp_node}{'proxy_read'} == 0 && $HASH{$tmp_node}{'proxy_write'} == 0 ) {
-            proxy_add_node($dbh,$tmp_node,$proxysql_rdid); 
-            $NEED_FLUSH=1;
-          }
-        }
-        if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
-        if ( scalar @proxy_good_write_nodes == 0 ) { 
-        my $tmp = $mysql_good_nodes[rand scalar @mysql_good_nodes];
-        proxy_add_node($dbh, $tmp,$proxysql_wrid);
-        $NEED_FLUSH=1;
-        }
-        if ( scalar @proxy_good_write_nodes > 1 )  { 
-          my $tmp = rand scalar @mysql_good_nodes;
-          for (my $i=0; $i<scalar @mysql_good_nodes; $i++) {
-            if ( $i == $tmp ) { continue ; }
-            proxy_suspend_node($dbh, $mysql_good_nodes[$i], $proxysql_wrid);
-          }
-          $NEED_FLUSH=1;
-        }
-        if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
-        if ( scalar @proxy_good_read_nodes == 0 && scalar @mysql_good_nodes == 1) {
-          proxy_add_node($dbh,$mysql_good_nodes[0],$proxysql_rdid);
-          $NEED_FLUSH=1;
-        }
-        if ( scalar @mysql_good_nodes > 1 ) {
-          foreach my $tmp_node (@mysql_good_nodes) {
-            if ( $HASH{$tmp_node}{'proxy_write'} == 1 && $HASH{$tmp_node}{'proxy_read'} == 1 ) {
-              if ($HASH{$tmp_node}{'proxy_write_status'} == 0 && $HASH{$tmp_node}{'proxy_read_status'} == 0 ) {
-                proxy_suspend_node($dbh,$tmp_node,$proxysql_rdid);
-                $NEED_FLUSH=1;
-              }  
+        #Start monitoring logic
+        #Start check 
+        if ( scalar @mysql_good_nodes > 0) { #If we have good nodes status
+          for my $tmp_node (@mysql_bad_nodes) {
+            if ( $HASH{$tmp_node}{'proxy_read'} == 1 && $HASH{$tmp_node}{'proxy_read_status'} == 0 ) {
+              proxy_suspend_node($dbh,$tmp_node,$proxysql_rdid);
+              $NEED_FLUSH=1;
+            }
+            if ( $HASH{$tmp_node}{'proxy_write'} == 1 && $HASH{$tmp_node}{'proxy_write_status'} == 0 ) {
+              proxy_suspend_node($dbh,$tmp_node,$proxysql_wrid);
+              $NEED_FLUSH=1;
             }
           }
-        }
-        if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
-        my $time=time();
-        foreach my $tmp_node (@proxy_bad_write_nodes) {
-          if ( ($time-$HASH{$tmp_node}{'proxy_write_change_time'}) > $proxy_suspend_timeout ) {
-            proxy_del_node($dbh,$tmp_node,$proxysql_wrid);
+             
+          for my $tmp_node (@mysql_good_nodes) {
+            if ( $HASH{$tmp_node}{'proxy_read'} == 0 && $HASH{$tmp_node}{'proxy_write'} == 0 ) {
+              proxy_add_node($dbh,$tmp_node,$proxysql_rdid); 
+              $NEED_FLUSH=1;
+            }
+          }
+          if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
+          if ( scalar @proxy_good_write_nodes == 0 ) { 
+          my $tmp = $mysql_good_nodes[rand scalar @mysql_good_nodes];
+          proxy_add_node($dbh, $tmp,$proxysql_wrid);
+          $NEED_FLUSH=1;
+          }
+          if ( scalar @proxy_good_write_nodes > 1 )  { 
+            my $tmp = rand scalar @mysql_good_nodes;
+            for (my $i=0; $i<scalar @mysql_good_nodes; $i++) {
+              if ( $i == $tmp ) { continue ; }
+              proxy_suspend_node($dbh, $mysql_good_nodes[$i], $proxysql_wrid);
+            }
             $NEED_FLUSH=1;
           }
-        }
-        foreach my $tmp_node (@proxy_bad_read_nodes) {
-          if ( ($time-$HASH{$tmp_node}{'proxy_read_change_time'}) > $proxy_suspend_timeout ) {
-            proxy_del_node($dbh,$tmp_node,$proxysql_rdid);
+          if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
+          if ( scalar @proxy_good_read_nodes == 0 && scalar @mysql_good_nodes == 1) {
+            proxy_add_node($dbh,$mysql_good_nodes[0],$proxysql_rdid);
             $NEED_FLUSH=1;
           }
+          if ( scalar @mysql_good_nodes > 1 ) {
+            foreach my $tmp_node (@mysql_good_nodes) {
+              if ( $HASH{$tmp_node}{'proxy_write'} == 1 && $HASH{$tmp_node}{'proxy_read'} == 1 ) {
+                if ($HASH{$tmp_node}{'proxy_write_status'} == 0 && $HASH{$tmp_node}{'proxy_read_status'} == 0 ) {
+                  proxy_suspend_node($dbh,$tmp_node,$proxysql_rdid);
+                  $NEED_FLUSH=1;
+                }  
+              }
+            }
+          }
+          if ( $NEED_FLUSH > 0 ) { read_proxy_conf ( $dbh, \%HASH , \%STAT); }
+          my $time=time();
+          foreach my $tmp_node (@proxy_bad_write_nodes) {
+            if ( ($time-$HASH{$tmp_node}{'proxy_write_change_time'}) > $proxy_suspend_timeout ) {
+              proxy_del_node($dbh,$tmp_node,$proxysql_wrid);
+              $NEED_FLUSH=1;
+            }
+          }
+          foreach my $tmp_node (@proxy_bad_read_nodes) {
+            if ( ($time-$HASH{$tmp_node}{'proxy_read_change_time'}) > $proxy_suspend_timeout ) {
+              proxy_del_node($dbh,$tmp_node,$proxysql_rdid);
+              $NEED_FLUSH=1;
+            }
+          }
+          if ( $NEED_FLUSH > 0 ) { proxy_flush($dbh); $NEED_FLUSH=0; }
+        } 
+        else {
+          #No any good nodes nothing to do
+          mylog("Proxy:0 Host:$proxysql_host:$proxysql_port Err: Zero good nodes. Do nothing")
         }
-        if ( $NEED_FLUSH > 0 ) { proxy_flush($dbh); $NEED_FLUSH=0; }
-      } 
-      else {
-        #No any good nodes nothing to do
-        mylog("Proxy:0 Host:$proxysql_host:$proxysql_port Err: Zero good nodes. Do nothing")
+        sleep $mysql_monitor_timeout;
       }
-      sleep $mysql_monitor_timeout;
     }
   }
- }
- mylog("Proxy:0 Host:$proxysql_host:$proxysql_port Err: Monitoring aborted by error: $@") if $@;
- sleep $mysql_err_timeout;
+  mylog("Proxy:0 Host:$proxysql_host:$proxysql_port Err: Monitoring aborted by error: $@") if $@;
+  sleep $mysql_err_timeout;
 }
 exit; ### Never running
 
